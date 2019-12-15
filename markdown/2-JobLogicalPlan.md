@@ -27,14 +27,14 @@
 
 产生哪些 RDD 与 transformation() 的计算逻辑有关，下面讨论一些典型的 [transformation()](http://spark.apache.org/docs/latest/programming-guide.html#transformations) 及其创建的 RDD。官网上已经解释了每个 transformation 的含义。iterator(split) 的意思是 foreach record in the partition。这里空了很多，是因为那些 transformation() 较为复杂，会产生多个 RDD，具体会在下一节图示出来。
 
-| Transformation |  Generated RDDs | Compute() | 
+| Transformation |  Generated RDDs | Compute() |
 |:-----|:-------|:---------|
-| **map**(func) | MappedRDD | iterator(split).map(f) | 
-| **filter**(func) | FilteredRDD | iterator(split).filter(f) | 
-| **flatMap**(func) | FlatMappedRDD | iterator(split).flatMap(f) | 
+| **map**(func) | MappedRDD | iterator(split).map(f) |
+| **filter**(func) | FilteredRDD | iterator(split).filter(f) |
+| **flatMap**(func) | FlatMappedRDD | iterator(split).flatMap(f) |
 | **mapPartitions**(func) | MapPartitionsRDD | f(iterator(split)) | |
 | **mapPartitionsWithIndex**(func) | MapPartitionsRDD |  f(split.index, iterator(split)) | |
-| **sample**(withReplacement, fraction, seed) | PartitionwiseSampledRDD | PoissonSampler.sample(iterator(split))  BernoulliSampler.sample(iterator(split)) | 
+| **sample**(withReplacement, fraction, seed) | PartitionwiseSampledRDD | PoissonSampler.sample(iterator(split))  BernoulliSampler.sample(iterator(split)) |
 | **pipe**(command, [envVars]) | PipedRDD | |
 | **union**(otherDataset) |  |  |
 | **intersection**(otherDataset) | | |
@@ -64,13 +64,13 @@ RDD 之间的数据依赖问题实际包括三部分：
 
 第三个问题比较复杂。需要考虑这个 transformation() 的语义，不同的 transformation() 的依赖关系不同。比如 map() 是 1:1，而 groupByKey() 逻辑执行图中的 ShuffledRDD 中的每个 partition 依赖于 parent RDD 中所有的 partition，还有更复杂的情况。
 
-再次考虑第三个问题，RDD x 中每个 partition 可以依赖于 parent RDD 中一个或者多个 partition。而且这个依赖可以是完全依赖或者部分依赖。部分依赖指的是 parent RDD 中某 partition 中一部分数据与 RDD x 中的一个 partition 相关，另一部分数据与 RDD x 中的另一个 partition 相关。下图展示了完全依赖和部分依赖。
+再次考虑第三个问题，RDD x 中每个 partition 可以依赖于 parent RDD 中一个或者多个 partition。而且这个依赖可以是完全依赖或者**部分依赖**。部分依赖指的是 parent RDD 中某 partition 中一部分数据与 RDD x 中的一个 partition 相关，另一部分数据与 RDD x 中的另一个 partition 相关。下图展示了完全依赖和部分依赖。
 
 ![Dependency](PNGfigures/Dependency.png)
 
 前三个是完全依赖，RDD x 中的 partition 与 parent RDD 中的 partition/partitions 完全相关。最后一个是部分依赖，RDD x 中的 partition 只与 parent RDD 中的 partition 一部分数据相关，另一部分数据与 RDD x 中的其他 partition 相关。
 
-在 Spark 中，完全依赖被称为 NarrowDependency，部分依赖被称为 ShuffleDependency。其实 ShuffleDependency 跟 MapReduce 中 shuffle 的数据依赖相同（mapper 将其 output 进行 partition，然后每个 reducer 会将所有 mapper 输出中属于自己的 partition 通过 HTTP fetch 得到）。
+在 Spark 中，**完全依赖被称为 NarrowDependency，部分依赖被称为 ShuffleDependency**。其实 ShuffleDependency 跟 MapReduce 中 shuffle 的数据依赖相同（mapper 将其 output 进行 partition，然后每个 reducer 会将所有 mapper 输出中属于自己的 partition 通过 HTTP fetch 得到）。
 
 - 第一种 1:1 的情况被称为 OneToOneDependency。
 - 第二种 N:1 的情况被称为 N:1 NarrowDependency。
@@ -100,12 +100,12 @@ code1 of iter.f()
 int[] array = {1, 2, 3, 4, 5}
 for(int i = 0; i < array.length; i++)
     f(array[i])
-``` 
+```
 code2 of f(iter)
 ```java
 int[] array = {1, 2, 3, 4, 5}
 f(array)
-``` 
+```
 ### 3. 给出一些典型的 transformation() 的计算过程及数据依赖图
 
 **1) union(otherRDD)**
