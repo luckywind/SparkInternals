@@ -1,6 +1,6 @@
 # 事件驱动的异步化编程
 
-我们以前经常看到基于事件的监控，基于事件的数据采集等等，Spark-Core内部的事件框架实现了基于事件的异步化编程模式。它的最大好处是可以提升应用程序对物理资源的充分利用，能最大限度的压榨物理资源，提升应用程序的处理效率。缺点比较明显，降低了应用程序的可读性。Spark的基于事件的异步化编程框架由事件框架和异步执行线程池组成，应用程序产生的Event发送给ListenerBus，ListenerBus再把消息广播给所有的Listener，每个Listener收到Event判断是否自己感兴趣的Event，若是，会在Listener独享的线程池中执行Event所对应的逻辑程序块。下图展示Event、ListenerBus、Listener、Executor的关系，从事件生成、事件传播、事件解释三个方面的视角来看。
+我们以前经常看到基于事件的监控，基于事件的数据采集等等，Spark-Core内部的事件框架实现了<font color=red>基于事件的异步化编程模式。它的最大好处是可以提升应用程序对物理资源的充分利用，能最大限度的压榨物理资源，提升应用程序的处理效率</font>。缺点比较明显，降低了应用程序的可读性。Spark的基于事件的异步化编程框架由事件框架和异步执行线程池组成，应用程序产生的Event发送给ListenerBus，ListenerBus再把消息广播给所有的Listener，每个Listener收到Event判断是否自己感兴趣的Event，若是，会在Listener独享的线程池中执行Event所对应的逻辑程序块。下图展示Event、ListenerBus、Listener、Executor的关系，从事件生成、事件传播、事件解释三个方面的视角来看。
 
 ![在这里插入图片描述](watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2FzZDQ5MTMxMA==,size_16,color_FFFFFF,t_70.png)
 

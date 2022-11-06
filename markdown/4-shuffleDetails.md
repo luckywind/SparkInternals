@@ -21,7 +21,7 @@ shuffle write 的任务很简单，那么实现也很简单：将 shuffle write 
 
 ![shuffle-write-no-consolidation](shuffle-write-no-consolidation.png)
 
-上图有 4 个 ShuffleMapTask 要在同一个 worker node 上运行，CPU core 数为 2，可以同时运行两个 task。每个 task 的执行结果（该 stage 的 finalRDD 中某个 partition 包含的 records）被逐一写到本地磁盘上。每个 task 包含 R 个缓冲区，R = reducer 个数（也就是下一个 stage 中 task 的个数），缓冲区被称为 bucket，其大小为`spark.shuffle.file.buffer.kb` ，默认是 32KB（Spark 1.1 版本以前是 100KB）。
+<font color=red>上图有 4 个 ShuffleMapTask 要在同一个 worker node 上运行，CPU core 数为 2，可以同时运行两个 task。每个 task 的执行结果（该 stage 的 finalRDD 中某个 partition 包含的 records）被逐一写到本地磁盘上。每个 task 包含 R 个缓冲区，R = reducer 个数（也就是下一个 stage 中 task 的个数;cxf:所以说明当前stage产生的task个数虽然是固定的，但是其文件数量、布局与下一个stage最后一个rdd的分区数有关），缓冲区被称为 bucket，其大小为`spark.shuffle.file.buffer.kb` ，默认是 32KB（Spark 1.1 版本以前是 100KB）。</font>
 
 > 其实 bucket 是一个广义的概念，代表 ShuffleMapTask 输出结果经过 partition 后要存放的地方，这里为了细化数据存放位置和数据名称，仅仅用 bucket 表示缓冲区。
 
@@ -148,6 +148,17 @@ HashMap 是 Spark shuffle read 过程中频繁使用的、用于 aggregate 的�
 
 AppendOnlyMap 的官方介绍是 A simple open hash table optimized for the append-only use case, where keys are never removed, but the value for each key may be changed。意思是类似 HashMap，但没有`remove(key)`方法。其实现原理很简单，开一个大 Object 数组，蓝色部分存储 Key，白色部分存储 Value。如下图：
 
+> <font color=red>Quadratic probing （二次方探查法） </font>
+>
+> 核心思想
+>
+> 当散列发生冲突时，将原来的值分别![+1^2, -1^2, +2^2, -2^2](https://gitee.com/luckywind/PigGo/raw/master/image/gif.latex)……如此进行。
+> **如果题目只考虑正向，那么减的就不要考虑**。
+>
+> 冲突处理公式
+>
+> 原来的值改变后，模上表长，如果仍然冲突，继续增加，**直到增加的值等于表长**
+
 ![AppendOnlyMap](PNGfigures/appendonlymap.png)
 
 当要 put(K, V) 时，先 hash(K) 找存放位置，**如果存放位置已经被占用，就使用 Quadratic probing 探测方法来找下一个空闲位置**。对于图中的 K6 来说，第三次查找找到 K4 后面的空闲位置，放进去即可。get(K6) 的时候类似，找三次找到 K6，取出紧挨着的 V6，与先来的 value 做 func，结果重新放到 V6 的位置。
@@ -184,6 +195,12 @@ ExternalAppendOnlyMap 持有一个 AppendOnlyMap，shuffle 来的一个个 (K, V
 ## Discussion
 通过本章的介绍可以发现，相比 MapReduce 固定的 shuffle-combine-merge-reduce 策略，Spark 更加灵活，会根据不同的 transformation() 的语义去设计不同的 shuffle-aggregate 策略，再加上不同的内存数据结构来混搭出合理的执行流程。
 
-这章主要讨论了 Spark 是怎么在不排序 records 的情况下完成 shuffle write 和 shuffle read，以及怎么将 shuffle 过程融入 RDD computing chain 中的。附带讨论了内存与磁盘的平衡以及与 Hadoop MapReduce shuffle 的异同。下一章将从部署图以及进程通信角度来描述 job 执行的整个流程，也会涉及 shuffle write 和 shuffle read 中的数据位置获取问题。
+这章主要讨论了 Spark 是怎么
+
+```
+在不排序 records 的情况下完成 shuffle write 和 shuffle read，以及怎么将 shuffle 过程融入 RDD computing chain 中的。附带讨论了内存与磁盘的平衡以及与 Hadoop MapReduce shuffle 的异同。下一章将
+```
+
+从部署图以及进程通信角度来描述 job 执行的整个流程，也会涉及 shuffle write 和 shuffle read 中的数据位置获取问题。
 
 另外，Jerry Shao 写的 [详细探究Spark的shuffle实现](http://jerryshao.me/architecture/2014/01/04/spark-shuffle-detail-investigation/) 很赞，里面还介绍了 shuffle 过程在 Spark 中的进化史。目前 sort-based 的 shuffle 也在实现当中，stay tuned。

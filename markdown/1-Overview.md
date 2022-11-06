@@ -12,17 +12,18 @@
 
 	```scala
 	./bin/run-example SparkPi 10
-	``` 
+	```
  那么 SparkPi 就是 Master 上的 Driver。如果是 YARN 集群，那么 Driver 可能被调度到 Worker 节点上运行（比如上图中的 Worker Node 2）。另外，如果直接在自己的 PC 上运行 driver program，比如在 Eclipse 中运行 driver program，使用
- 		
+
  	```scala
  	val sc = new SparkContext("spark://master:7077", "AppName")
  	``` 
   去连接 master 的话，driver 就在自己的 PC 上，但是不推荐这样的方式，因为 PC 和 Workers 可能不在一个局域网，driver 和 executor 之间的通信会很慢。
  		
 		
-- 每个 Worker 上存在一个或者多个 ExecutorBackend 进程。每个进程包含一个 Executor 对象，该对象持有一个线程池，每个线程可以执行一个 task。
-- 每个 application 包含一个 driver 和多个 executors，每个 executor 里面运行的 tasks 都属于同一个 application。
+
+- **每个 Worker 上存在一个或者多个 ExecutorBackend 进程。每个进程包含一个 Executor 对象，该对象持有一个线程池，每个线程可以执行一个 task。**
+- 每个 application 包含一个 driver 和多个 executors，**每个 executor 里面运行的 tasks 都属于同一个 application**。
 - 在 Standalone 版本中，ExecutorBackend 被实例化成 CoarseGrainedExecutorBackend 进程。
 
 	> 在我部署的集群中每个 Worker 只运行了一个 CoarseGrainedExecutorBackend 进程，没有发现如何配置多个 CoarseGrainedExecutorBackend 进程。（应该是运行多个 applications 的时候会产生多个进程，这个我还没有实验，）
@@ -75,8 +76,9 @@ object GroupByTest {
       arr1
     }.cache
     // Enforce that everything has been calculated and in cache
+    //目的就是保证所有rdd都已经计算完成并缓存
     pairs1.count
-
+    //[(1,asdd),(3,dfdg),(40,hhhh),...] 这里就是统计不同key个数
     println(pairs1.groupByKey(numReducers).count)
 
     sc.stop()
@@ -110,14 +112,17 @@ object GroupByTest {
     ShuffledRDD[2] at groupByKey at GroupByTest.scala:51 (36 partitions)
       FlatMappedRDD[1] at flatMap at GroupByTest.scala:38 (100 partitions)
         ParallelCollectionRDD[0] at parallelize at GroupByTest.scala:38 (100 partitions)
-``` 
+```
 
 用图表示就是：
 ![deploy](PNGfigures/JobRDD.png)
 
 > 需要注意的是 data in the partition 展示的是每个 partition 应该得到的计算结果，并不意味着这些结果都同时存在于内存中。
 
+**Reducebykey(reduceNums)操作会让上一个rdd的100个分区分发到新rdd的35个分区上，然后这35个分区各自执行内部聚合，即把相同key的元祖值放到一起。reducebykey操作产生了两个rdd哦！！！**
+
 根据上面的分析可知：
+
 - 用户首先 init 了一个0-99 的数组： `0 until numMappers`
 - parallelize() 产生最初的 ParrallelCollectionRDD，每个 partition 包含一个整数 i。
 - 执行 RDD 上的 transformation 操作（这里是 flatMap）以后，生成 FlatMappedRDD，其中每个 partition 包含一个 Array[(Int, Array[Byte])]。
@@ -131,7 +136,7 @@ object GroupByTest {
 
 **可以看到逻辑执行图描述的是 job 的数据流：job 会经过哪些 transformation()，中间生成哪些 RDD 及 RDD 之间的依赖关系。**
 
-## Job 物理执行图
+## Job 物理执行图（重要）
 逻辑执行图表示的是数据上的依赖关系，不是 task 的执行图。在 Hadoop 中，用户直接面对 task，mapper 和 reducer 的职责分明：一个进行分块处理，一个进行 aggregate。Hadoop 中 整个数据流是固定的，只需要填充 map() 和 reduce() 函数即可。Spark 面对的是更复杂的数据处理流程，数据依赖更加灵活，很难将数据流和物理 task 简单地统一在一起。因此 Spark 将数据流和具体 task 的执行流程分开，并设计算法将逻辑执行图转换成 task 物理执行图，转换算法后面的章节讨论。
 
 针对这个 job，我们先画出它的物理执行 DAG 图如下：
@@ -139,17 +144,19 @@ object GroupByTest {
 
 可以看到 GroupByTest 这个 application 产生了两个 job，第一个 job 由第一个 action（也就是 `pairs1.count`）触发产生，分析一下第一个 job：
 
+![image-20201022204518147](https://gitee.com/luckywind/PigGo/raw/master/image/image-20201022204518147.png)
+
 - 整个 job 只包含 1 个 stage（不明白什么是stage没关系，后面章节会解释，这里只需知道有这样一个概念）。
-- Stage 0 包含 100 个 ResultTask。
-- 每个 task 先计算 flatMap，产生 FlatMappedRDD，然后执行 action() 也就是 count()，统计每个 partition 里 records 的个数，比如 partition 99 里面只含有 9 个 records。
+- **Stage 0 包含 100 个 ResultTask**。
+- 每个 task 先计算 flatMap，产生 FlatMappedRDD（transformation/action会产生RDD, 可能不止产生一个！），然后执行 action() 也就是 count()，统计每个 partition 里 records 的个数，比如 partition 99 里面只含有 9 个 records。
 - 由于 pairs1 被声明要进行 cache，因此在 task 计算得到 FlatMappedRDD 后会将其包含的 partitions 都 cache 到 executor 的内存。
 - task 执行完后，driver 收集每个 task 的执行结果，然后进行 sum()。
 - job 0 结束。
 
 第二个 job 由 `pairs1.groupByKey(numReducers).count` 触发产生。分析一下该 job：
 
-- 整个 job 包含 2 个 stage。
-- Stage 1 包含 100 个 ShuffleMapTask，每个 task 负责从 cache 中读取 pairs1 的一部分数据并将其进行类似 Hadoop 中 mapper 所做的 partition，最后将 partition 结果写入本地磁盘。
+- 整个 job 包含 **2 个 stage**。 stage编号从后往前递增
+- Stage 1 包含 100 个 ShuffleMapTask，每个 task 负责从 cache 中读取 pairs1 的一部分数据并将其进行类似 Hadoop 中 mapper 所做的 partition，最后将 partition 结果写入本地磁盘。cxf: 每个task从内存中读取pairs1的一部分数据写到本地磁盘。
 - Stage 0 包含 36 个 ResultTask，每个 task 首先 shuffle 自己要处理的数据，边 fetch 数据边进行 aggregate 以及后续的 mapPartitions() 操作，最后进行 count() 计算得到 result。
 - task 执行完后，driver 收集每个 task 的执行结果，然后进行 sum()。
 - job 1 结束。

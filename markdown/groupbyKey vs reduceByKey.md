@@ -1,6 +1,6 @@
 下面来看看groupByKey和reduceByKey的区别：
 
-```
+```scala
     val conf = new SparkConf().setAppName("GroupAndReduce").setMaster("local")
     val sc = new SparkContext(conf)
     val words = Array("one", "two", "two", "three", "three", "three")
